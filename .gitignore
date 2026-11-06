@@ -8,6 +8,7 @@ venv/
 run_*/
 shots/
 *.png
+!assets/*.png
 
 # 浏览器调试配置目录
 cdp-*-profile/
