@@ -32,6 +32,7 @@ collect（脚本截图取题） → 识别（大模型出 answers.json） → ap
 - **开箱自检**：`bootstrap.py` 自动检查 Python、安装 playwright、挑浏览器、起调试端口
 - **多浏览器**：Chrome / Edge / Brave / Chromium 均可（Chromium 系共用 CDP 协议）
 - **零 LLM 操作**：切题、点选项、提交、抓分全在本地脚本完成
+- **先查后做**：`scan` 阶段读取左侧目录，先告诉你这门课还有哪些习题没做完
 - **遇验证码即停**：不做任何破解，截图存证后提示人工处理
 
 不支持 Firefox / Safari —— 它们没有 CDP 接口。
@@ -56,12 +57,16 @@ python scripts/bootstrap.py --browser edge --port 9333
 
 > 用 yuketang-auto-answer 完成这个作业：https://www.yuketang.cn/ai-workspace/lms-graph/.../exercise/xxxx
 
-## 手动执行四个阶段
+## 手动执行五个阶段
 
 ```bash
 PY=python                                    # 换成能跑 playwright 的解释器
 URL="https://www.yuketang.cn/ai-workspace/lms-graph/<cid>/exercise/<eid>?node_id=...&is_chapter=1"
 RUN=./run_<eid>
+
+# 0. 先扫一遍：这门课还有哪些习题没做完（零 LLM）
+$PY scripts/ykt_executor.py --phase scan --url "$URL"
+#    输出：目录完成度 / 作业总数 / 未完成清单，末行一行 JSON 含 has_unfinished
 
 # A. 采题（零 LLM）：读顶部计数器拿总题数，点左侧题号直达逐题截图
 $PY scripts/ykt_executor.py --phase collect --url "$URL" --run-dir "$RUN"

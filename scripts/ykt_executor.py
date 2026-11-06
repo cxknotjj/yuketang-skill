@@ -455,6 +455,67 @@ def phase_report(page, run_dir):
     return 0
 
 
+def scan_catalog(page, timeout_s=20):
+    """读左侧「目录」里的作业条目，判断哪些还没完成。
+
+    判定依据（实测）：.leaf-item-status 内含 icon-yuanquangou-mianzhuang 图标 = 已完成，
+    为空（<!---->） = 未完成。返回 (progress, items)。
+    """
+    mf = page.main_frame
+    for _ in range(int(timeout_s / 0.5)):
+        try:
+            n = mf.evaluate("() => document.querySelectorAll('.leaf-item').length")
+        except Exception:
+            n = 0
+        if n:
+            break
+        page.wait_for_timeout(500)
+
+    items = mf.evaluate("""() => [...document.querySelectorAll('.leaf-item')].map(e => {
+        const t = e.querySelector('.leaf-item-title');
+        const tag = e.querySelector('.leaf-item-tag');
+        const st = e.querySelector('.leaf-item-status');
+        return {
+            title: (t ? t.innerText : '').trim(),
+            tag: (tag ? tag.innerText : '').trim(),
+            done: !!st && /icon-yuanquangou/.test(st.innerHTML)
+        };
+    }).filter(o => o.title)""")
+    try:
+        progress = (mf.evaluate(
+            "() => { const p = document.querySelector('.progress-num');"
+            " return p ? p.innerText.trim() : null; }") or "").strip()
+    except Exception:
+        progress = ""
+    return progress, items or []
+
+
+def phase_scan(page, run_dir=None):
+    """判断是否还有其他未完成的习题/作业。"""
+    progress, items = scan_catalog(page)
+    homework = [i for i in items if "作业" in i["tag"] or "习题" in i["title"]]
+    unfinished = [i for i in homework if not i["done"]]
+    result = {"course_url": page.url, "progress": progress,
+              "homework_total": len(homework),
+              "finished": [i["title"] for i in homework if i["done"]],
+              "unfinished": [i["title"] for i in unfinished],
+              "unfinished_count": len(unfinished),
+              "has_unfinished": bool(unfinished),
+              "scanned_at": datetime.now().isoformat()}
+    if run_dir:
+        jsave(result, Path(run_dir) / "scan.json")
+
+    log("目录完成度：%s" % (progress or "未知"))
+    log("作业条目：共 %d 个，已完成 %d 个，**未完成 %d 个**"
+        % (len(homework), len(homework) - len(unfinished), len(unfinished)))
+    for i in unfinished:
+        log("  未完成 - %s" % i["title"])
+    if not unfinished:
+        log("没有其他未完成的习题。")
+    print(json.dumps(result, ensure_ascii=False), flush=True)
+    return 0
+
+
 def parse_range(spec):
     if not spec:
         return None
@@ -470,22 +531,26 @@ def parse_range(spec):
 
 def main():
     ap = argparse.ArgumentParser(description="雨课堂机械执行器（零 LLM）")
-    ap.add_argument("--phase", required=True, choices=["collect", "apply", "report"])
-    ap.add_argument("--run-dir", required=True)
-    ap.add_argument("--url", help="collect 阶段：习题页地址；其余阶段可从 manifest 读取")
+    ap.add_argument("--phase", required=True,
+                    choices=["scan", "collect", "apply", "report"])
+    ap.add_argument("--run-dir", help="工作目录；scan 阶段可省略")
+    ap.add_argument("--url", help="作业页/课程页地址；collect 阶段必填，其余可从 manifest 读取")
     ap.add_argument("--answers", help="apply 阶段：answers.json")
     ap.add_argument("--only", help="apply 阶段：只跑指定题号，如 13-20")
     ap.add_argument("--resume", action="store_true", help="断点续跑")
     ap.add_argument("--cdp", default=DEFAULT_CDP)
     args = ap.parse_args()
 
-    run = Path(args.run_dir)
+    run = Path(args.run_dir) if args.run_dir else None
     url = args.url
-    if not url:
+    if not url and run is not None:
         mf = run / "manifest.json"
         url = jload(mf)["exercise_url"] if mf.exists() else None
-    if not url:
+    if not url and args.phase != "scan":
         print("缺少 --url 且运行目录无 manifest.json", file=sys.stderr)
+        return 1
+    if args.phase != "scan" and run is None:
+        print("该阶段需要 --run-dir", file=sys.stderr)
         return 1
     if args.phase == "apply" and not args.answers:
         print("apply 阶段需要 --answers", file=sys.stderr)
@@ -493,6 +558,11 @@ def main():
 
     pw, _browser, ctx = connect(args.cdp)
     try:
+        if args.phase == "scan":
+            page = (open_exercise(ctx, url) if url
+                    else (ctx.pages[0] if ctx.pages else ctx.new_page()))
+            maximize(page)
+            return phase_scan(page, run)
         page = open_exercise(ctx, url)
         maximize(page)
         if args.phase == "collect":

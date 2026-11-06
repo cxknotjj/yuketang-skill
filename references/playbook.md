@@ -84,7 +84,14 @@ curl -s --max-time 4 --noproxy "*" http://127.0.0.1:9333/json/version
 ```
 `score == 0` 的题即失分题，report 时一并列出。
 
-### 2.4 report.json（report 产出）
+### 2.4 scan.json（scan 产出，可选）
+```json
+{"progress": "完成度 75.00%", "homework_total": 8,
+ "finished": ["习题A"], "unfinished": ["习题B"], "unfinished_count": 1,
+ "has_unfinished": true}
+```
+
+### 2.5 report.json（report 产出）
 ```json
 {"exercise_url": "…", "score": {"got": 94, "full": 100}, "question_count": 20,
  "result_screenshot": "…/result.png"}
@@ -108,6 +115,7 @@ curl -s --max-time 4 --noproxy "*" http://127.0.0.1:9333/json/version
 | 节奏 | 切题 / 提交后各停 1.5 秒（过快触发人机检测） |
 | 翻页 | 兜底路径：`get_by_text("上一题"/"下一题", exact=True)`，跳过禁用态（`closest('.is-disabled,[disabled]')`）与屏幕外诱饵 |
 | 截图 | `scope.frame_element().screenshot()`，失败回退整页 |
+| 目录扫描 | `.leaf-item` 列表；`.leaf-item-title` 标题、`.leaf-item-tag` 类型、`.leaf-item-status` 内含 `icon-yuanquangou` 即已完成 |
 | 成绩单 | 按钮文本是「展开 »」/「收起 «」，用 `find_button_like` 包含匹配；点开后异步渲染，轮询等「作业得分」再读；不收起会挡住底部按钮 |
 | 验证码 | DOM 出现 `#homework-automation-risk-challenge` 或 `[data-risk-target="challenge"]` → 截图 + 退出码 2，不做任何拖拽（题面文字是加密字体，文字匹配不可靠） |
 

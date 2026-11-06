@@ -9,7 +9,7 @@ agent_created: true
 脚本干机械活，大模型只识别答案。20 题作业的大模型调用从 ~20-40 次降到 **1 次批量识题**。
 
 ```
-collect（脚本截图取题） → 识别（大模型出 answers.json） → apply（脚本点选提交） → report（脚本抓总分）
+scan（看还有哪些没做） → collect（脚本截图取题） → 识别（大模型出 answers.json） → apply（脚本点选提交） → report（脚本抓总分）
 ```
 
 ## 0. 先判断能不能跑
@@ -137,6 +137,20 @@ python <skill>/scripts/cdp_watchdog.py --browser edge --port 9333
 
 命令里的 `PY` 指能跑 playwright 的 Python（有 conda 环境就用绝对路径，如 `D:\env\conda\python.exe`）。若浏览器不在默认端口，加 `--cdp http://127.0.0.1:<port>`。
 
+### 阶段 0：scan（脚本，零 LLM，可选）
+
+先判断这份课里**还有哪些习题没做完**，避免盲目开工或漏做：
+
+```
+PY <skill>/scripts/ykt_executor.py --phase scan --url "<任意作业页或课程页URL>" [--run-dir <run目录>]
+```
+
+- 读左侧「目录」里的全部条目，按 `leaf-item-status` 是否含 `icon-yuanquangou` 图标判断完成状态。
+- 输出：目录完成度、作业条目总数、已/未完成清单；有 `--run-dir` 时另存 `scan.json`。
+- 末行打印一行 JSON，便于程序判断：`{"has_unfinished": true, "unfinished": ["…"], "unfinished_count": 2}`。
+
+判定规则：`has_unfinished=true` 就继续往下做；`false` 说明这门课的作业已经全部完成，直接告诉用户即可。
+
 ### 阶段 A：collect（脚本，零 LLM）
 ```
 PY <skill>/scripts/ykt_executor.py --phase collect --url "<习题页URL>" --run-dir <run目录>
@@ -190,6 +204,7 @@ PY <skill>/scripts/ykt_executor.py --phase report --run-dir <run目录>
 | 提交 | 点「提交」后**自动跳到下一题**，不用手动切题；得分统一在 report 读 |
 | 末题 | 「下一题」是禁用态（`.is-disabled`），必须跳过 |
 | 诱饵元素 | 有坐标 `-10000` 的诱饵（`data-risk-decoy-type`），按可见尺寸过滤 |
+| 目录/完成状态 | 左侧每个条目是 `.leaf-item`，`.leaf-item-tag` 是「作业/视频」等类型；`.leaf-item-status` 含 `icon-yuanquangou` = 已完成，为空 = 未完成 |
 | 成绩单 | 按钮实际文本是「展开 »」「收起 «」，要用**包含匹配**；点开后异步渲染，需轮询等「作业得分」出现；开着时是覆盖层，会挡住底部按钮 |
 | 验证码 | 遮罩 `#homework-automation-risk-challenge` / `[data-risk-target="challenge"]`，拦截所有点击 → **停止并上报**。题面文字是加密字体，只能靠 DOM 标记判断 |
 
@@ -216,7 +231,7 @@ PY <skill>/scripts/ykt_executor.py --phase report --run-dir <run目录>
 |---|---|
 | `scripts/bootstrap.py` | 环境自检与自动准备（装依赖、挑浏览器、起调试端口） |
 | `scripts/browser_env.py` | 浏览器探测/启动/配置目录复制（四浏览器适配层） |
-| `scripts/ykt_executor.py` | 执行器：collect / apply / report |
+| `scripts/ykt_executor.py` | 执行器：scan / collect / apply / report |
 | `scripts/cdp_watchdog.py` | 调试端口保活 |
 | `scripts/start_cdp_browser.cmd` | 双击启动带调试端口的浏览器 |
 | `references/playbook.md` | 数据契约、脚本内部要点、排障与踩坑记录 |
