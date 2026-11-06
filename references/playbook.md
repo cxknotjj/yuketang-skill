@@ -93,7 +93,8 @@ curl -s --max-time 4 --noproxy "*" http://127.0.0.1:9333/json/version
 
 ### 2.5 report.json（report 产出）
 ```json
-{"exercise_url": "…", "score": {"got": 94, "full": 100}, "question_count": 20,
+{"exercise_url": "…", "score": {"got": 95, "full": 100}, "question_count": 20,
+ "wrong": [{"index": 17, "correct_answer": "ABCD"}],
  "result_screenshot": "…/result.png"}
 ```
 
@@ -112,12 +113,13 @@ curl -s --max-time 4 --noproxy "*" http://127.0.0.1:9333/json/version
 | 点选 | toggle 语义：多选只点「该选未选」+「已选不该选」；单选已选则不动 |
 | 提交 | 点「提交」→ 页面**自动跳到下一题**，不手动切题 |
 | 读分 | 只在 report 阶段读「作业得分 X/Y」；apply 不逐题回翻 |
-| 节奏 | 切题 / 提交后各停 1.5 秒（过快触发人机检测） |
+| 节奏 | 事件驱动：点击后每 250ms 看题号是否变化（下限 0.6 秒），变了立刻继续；20 题 collect 约 30 秒 |
 | 翻页 | 兜底路径：`get_by_text("上一题"/"下一题", exact=True)`，跳过禁用态（`closest('.is-disabled,[disabled]')`）与屏幕外诱饵 |
 | 截图 | `scope.frame_element().screenshot()`，失败回退整页 |
 | 目录扫描 | `.leaf-item` 列表；`.leaf-item-title` 标题、`.leaf-item-tag` 类型、`.leaf-item-status` 内含 `icon-yuanquangou` 即已完成 |
-| 成绩单 | 按钮文本是「展开 »」/「收起 «」，用 `find_button_like` 包含匹配；点开后异步渲染，轮询等「作业得分」再读；不收起会挡住底部按钮 |
-| 验证码 | DOM 出现 `#homework-automation-risk-challenge` 或 `[data-risk-target="challenge"]` → 截图 + 退出码 2，不做任何拖拽（题面文字是加密字体，文字匹配不可靠） |
+| 成绩单 | 按钮文本是「展开 »」/「收起 «」，用 `find_button_like` 包含匹配；点开后异步渲染，轮询等「作业得分」再读；网格 `.subject-item.primary` 内 `danger` = 错题、`success` = 对；不收起会挡住底部按钮 |
+| 答案闸门 | `confidence != high` 默认不提交（`--allow-low` 放行）；`--dry-run` 只点选不提交 |
+| 验证码 | 每 300ms 巡检 `#homework-automation-risk-challenge` / `[data-risk-target="challenge"]`；命中后截图并**等待最多 120 秒**，期间每 2 秒轮询是否消失，消失即带 `--resume` 续跑，超时才退出码 2 |
 
 ## 4. 端到端命令
 

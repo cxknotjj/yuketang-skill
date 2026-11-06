@@ -33,7 +33,8 @@ collect（脚本截图取题） → 识别（大模型出 answers.json） → ap
 - **多浏览器**：Chrome / Edge / Brave / Chromium 均可（Chromium 系共用 CDP 协议）
 - **零 LLM 操作**：切题、点选项、提交、抓分全在本地脚本完成
 - **先查后做**：`scan` 阶段读取左侧目录，先告诉你这门课还有哪些习题没做完
-- **遇验证码即停**：不做任何破解，截图存证后提示人工处理
+- **验证码等待**：不做任何破解，截图后等你手动划完（最多 120 秒），好了自动续跑
+- **错题回溯**：report 会解析成绩单，直接告诉你第几题错了、正确答案是什么
 
 不支持 Firefox / Safari —— 它们没有 CDP 接口。
 
@@ -81,7 +82,25 @@ $PY scripts/ykt_executor.py --phase apply --run-dir "$RUN" --answers "$RUN/answe
 $PY scripts/ykt_executor.py --phase report --run-dir "$RUN"
 ```
 
-常用参数：`--resume` 断点续跑，`--only 3,7,9` 只跑指定题，`--cdp http://127.0.0.1:9444` 换端口。
+常用参数：
+
+| 参数 | 作用 |
+|---|---|
+| `--resume` | 断点续跑 |
+| `--only 3,7,9` | 只跑指定题 |
+| `--entry "<作业名>"` | 在左侧目录点开该作业（同页切换，不重载） |
+| `--dry-run` | 只点选不提交，先人工核对 |
+| `--allow-low` | 允许提交 `confidence != high` 的题（默认闸门会跳过） |
+| `--run-root` | batch 阶段的根目录 |
+| `--cdp http://127.0.0.1:9444` | 换调试端口 |
+
+整门课批量：
+
+```bash
+$PY scripts/ykt_executor.py --phase batch-collect --url "$URL" --run-root ./runs
+# 为每个 runs/run_<id>/ 写 answers.json
+$PY scripts/ykt_executor.py --phase batch-apply --run-root ./runs
+```
 
 ## 目录结构
 

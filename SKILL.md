@@ -145,6 +145,7 @@ python <skill>/scripts/cdp_watchdog.py --browser edge --port 9333
 PY <skill>/scripts/ykt_executor.py --phase scan --url "<任意作业页或课程页URL>" [--run-dir <run目录>]
 ```
 
+- 会先**强制刷新页面**再读（目录状态有缓存，不刷新会把已完成的判成未完成）。
 - 读左侧「目录」里的全部条目，按 `leaf-item-status` 是否含 `icon-yuanquangou` 图标判断完成状态。
 - 输出：目录完成度、作业条目总数、已/未完成清单；有 `--run-dir` 时另存 `scan.json`。
 - 末行打印一行 JSON，便于程序判断：`{"has_unfinished": true, "unfinished": ["…"], "unfinished_count": 2}`。
@@ -157,6 +158,8 @@ PY <skill>/scripts/ykt_executor.py --phase collect --url "<习题页URL>" --run-
 ```
 - 先读顶部计数器 `X/Y 题` 得**总题数 Y**，再按题号 1..Y **点左侧题号直达**逐题截图。
 - 不点选项、不提交。中断可加 `--resume` 续采。
+- 翻页是**事件驱动**（题号一变就继续），20 题约 30 秒。
+- 也可用 `--entry "<作业名>"` 直接在左侧目录点开，同页切换 iframe，不重载应用。
 - 产物：`manifest.json` + `shots/qNN.png`。
 
 ### 阶段 B：识别（唯一的大模型环节）
@@ -178,13 +181,27 @@ PY <skill>/scripts/ykt_executor.py --phase apply --run-dir <run目录> --answers
 - 逐题：题号直达 → 读当前选中态 → 只补差额 → 校验一致 → 提交（提交后**自动跳下一题**）。
 - 节奏固定 1.5 秒/步，过快会触发人机验证。
 - `--only 3,7,9` 只跑指定题；`--resume` 跳过 `state.json` 里已完成的题。
+- **低置信度闸门**：`confidence` 不是 `high` 的题默认**不提交**，记入 `flagged`；确认无误后加 `--allow-low` 再跑。
+- **`--dry-run`**：只点选不提交，逐题打印选中结果，适合不可重做的作业先核对一遍。
+- **答案自检**：单选/判断必须 1 个字母、多选至少 2 个、字母不超出该题选项数，不合规会在日志里告警。
 
 ### 阶段 D：report（脚本，零 LLM）
 ```
 PY <skill>/scripts/ykt_executor.py --phase report --run-dir <run目录>
 ```
-- 点「展开」进成绩单 → 读「作业得分 X/Y」「共N题」→ 截图 `result.png` → 点「收起」。
+- 点「展开」进成绩单 → 读「作业得分 X/Y」「共N题」→ **解析网格里标红的错题并回读正确答案** → 截图 `result.png` → 点「收起」。
+- 输出示例：`错题：第17题(正确答案 ABCD)`。
 - 产物：`report.json` / `report.txt`。
+
+### 阶段 E：batch（整门课批量，可选）
+
+```
+PY <skill>/scripts/ykt_executor.py --phase batch-collect --url "<任意页>" --run-root <根目录>
+# 识别阶段为每份作业写 answers.json（放在各自 run_<id>/ 下）
+PY <skill>/scripts/ykt_executor.py --phase batch-apply --run-root <根目录> [--dry-run] [--allow-low]
+```
+- `batch-collect`：刷新目录 → 列出未完成 → 逐个点开并采集到 `<根目录>/run_<exercise_id>/`
+- `batch-apply`：遍历各 run 目录，有 `answers.json` 的就 apply + report，没有的跳过
 
 ### 交付给用户
 汇总表：作业名 / 题数 / 各题答案 / 总分 / 是否 ≥90%；课堂签到类条目注明已跳过；验证码是否中断过、停在哪题。
@@ -214,8 +231,9 @@ PY <skill>/scripts/ykt_executor.py --phase report --run-dir <run目录>
 
 | 现象 | 处置 |
 |---|---|
-| 出现安全核验（验证码） | 脚本截图存证后**退出码 2**；转告用户手动完成，不自动破解 |
+| 出现安全核验（验证码） | 立即截图并提示，然后**最多等 120 秒**：你手动划完它就自动续跑；超时才退出码 2。不自动破解 |
 | 端口无响应 | 看门狗自动拉起；仍失败让用户双击 `start_cdp_browser.cmd` |
+| 打开就是登录页 | 脚本退出码 3 并提示未登录，需用户在窗口里扫码或用 `--browser` 换浏览器 |
 | 页面停在成绩单视图 | 点「收起」 |
 | 停在切题守卫弹窗 | 点「先不用了」 |
 | 选中态与答案不符 | 脚本不提交该题，记入 `flagged`，继续下一题 |
@@ -235,6 +253,19 @@ PY <skill>/scripts/ykt_executor.py --phase report --run-dir <run目录>
 | `scripts/cdp_watchdog.py` | 调试端口保活 |
 | `scripts/start_cdp_browser.cmd` | 双击启动带调试端口的浏览器 |
 | `references/playbook.md` | 数据契约、脚本内部要点、排障与踩坑记录 |
+
+### 命令行参数速查
+
+| 参数 | 作用 |
+|---|---|
+| `--phase scan\|collect\|apply\|report\|batch-collect\|batch-apply` | 执行阶段 |
+| `--entry "<作业名>"` | 在左侧目录点开该作业（同页切换） |
+| `--dry-run` | 只点选不提交 |
+| `--allow-low` | 允许提交非 high 置信度的题 |
+| `--only 3,7,9` | 只跑指定题号 |
+| `--resume` | 断点续跑 |
+| `--run-root` | batch 阶段的根目录 |
+| `--cdp http://127.0.0.1:9444` | 换调试端口 |
 
 ### 数据契约（速查）
 - `manifest.json`：`{exercise_url, questions:[{index, screenshot}], total}`
