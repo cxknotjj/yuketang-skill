@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 运行产物（截图、答案、报告）
+run_*/
+shots/
+*.png
+
+# 浏览器调试配置目录
+cdp-*-profile/
+
+# 系统
+.DS_Store
+Thumbs.db
